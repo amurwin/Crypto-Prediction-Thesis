@@ -1,130 +1,145 @@
+import time
+import torch
+import torch.nn as nn
+import seaborn as sns
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-import torch #pytorch
-import torch.nn as nn
-from torch.autograd import Variable
+from sklearn.preprocessing import MinMaxScaler
 
-df = pd.read_csv('SBUX.csv', index_col = 'Date', parse_dates=True)
-df.head(5)
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-plt.style.use('ggplot')
-df['Volume'].plot(label='CLOSE', title='Star Bucks Stock Volume')
+# 1
+df = pd.read_csv("TestData/file.csv", names=['ask_price', 'bid_price',
+                 'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
+df = df.iloc[::100]
 
-x = df.iloc[:, :-1]
-y = df.iloc[:, 5:6]
+# 2
+print('2')
+all_data = df['ask_price'].values.astype(float)
 
+# 3
+print('3')
+test_data_size = int(len(df.index) * 0.2)
+train_data = all_data[:-test_data_size]
+test_data = all_data[-test_data_size:]
 
-mm = MinMaxScaler()
-ss = StandardScaler()
+# 4
+print('4')
+scaler = MinMaxScaler(feature_range=(-1, 1))
+train_data_normalized = scaler.fit_transform(train_data .reshape(-1, 1))
 
+# 5
+print('5')
+train_data_normalized = torch.FloatTensor(
+    train_data_normalized).view(-1).to(device)
 
-x_ss = ss.fit_transform(x)
-y_mm = mm.fit_transform(y)
-
-X_train = x_ss[:200, :]
-X_test = x_ss[200:, :]
-
-y_train = y_mm[:200, :]
-y_test = y_mm[200:, :] 
-
-print("Training Shape", X_train.shape, y_train.shape)
-print("Testing Shape", X_test.shape, y_test.shape) 
-
-X_train_tensors = Variable(torch.Tensor(X_train))
-X_test_tensors = Variable(torch.Tensor(X_test))
-
-y_train_tensors = Variable(torch.Tensor(y_train))
-y_test_tensors = Variable(torch.Tensor(y_test))
-
-#reshaping to rows, timestamps, features
-
-X_train_tensors_final = torch.reshape(X_train_tensors,   (X_train_tensors.shape[0], 1, X_train_tensors.shape[1]))
+# 6
+print('6')
+train_window = 5
 
 
-X_test_tensors_final = torch.reshape(X_test_tensors,  (X_test_tensors.shape[0], 1, X_test_tensors.shape[1])) 
+def create_inout_sequences(input_data, tw):
+    inout_seq = []
+    L = len(input_data)
+    for i in range(L-tw):
+        train_seq = input_data[i:i+tw]
+        train_label = input_data[i+tw:i+tw+1]
+        inout_seq.append((train_seq, train_label))
+    return inout_seq
 
-print("Training Shape", X_train_tensors_final.shape, y_train_tensors.shape)
-print("Testing Shape", X_test_tensors_final.shape, y_test_tensors.shape)
+
+train_inout_seq = create_inout_sequences(train_data_normalized, train_window)
+
+# 7
+print('7')
 
 
-# https://cnvrg.io/pytorch-lstm/
+class LSTM(nn.Module):
+    def __init__(self, input_size=1, hidden_layer_size=100, output_size=1):
+        super().__init__()
+        self.hidden_layer_size = hidden_layer_size
 
-class LSTM1(nn.Module):
-    def __init__(self, num_classes, input_size, hidden_size, num_layers, seq_length):
-        super(LSTM1, self).__init__()
-        self.num_classes = num_classes #number of classes
-        self.num_layers = num_layers #number of layers
-        self.input_size = input_size #input size
-        self.hidden_size = hidden_size #hidden state
-        self.seq_length = seq_length #sequence length
+        self.lstm = nn.LSTM(input_size, hidden_layer_size).to(device)
 
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
-                          num_layers=num_layers, batch_first=True) #lstm
-        self.fc_1 =  nn.Linear(hidden_size, 128) #fully connected 1
-        self.fc = nn.Linear(128, num_classes) #fully connected last layer
+        self.linear = nn.Linear(hidden_layer_size, output_size)
 
-        self.relu = nn.ReLU()
-    
-    def forward(self,x):
-        h_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)) #hidden state
-        c_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)) #internal state
-        # Propagate input through LSTM
-        output, (hn, cn) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
-        hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
-        out = self.relu(hn)
-        out = self.fc_1(out) #first Dense
-        out = self.relu(out) #relu
-        out = self.fc(out) #Final Output
-        return out
+        self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size).to(device),
+                            torch.zeros(1, 1, self.hidden_layer_size).to(device))
 
-num_epochs = 1000 #1000 epochs
-learning_rate = 0.001 #0.001 lr
+    def forward(self, input_seq):
+        lstm_out, self.hidden_cell = self.lstm(
+            input_seq.view(len(input_seq), 1, -1), self.hidden_cell)
+        predictions = self.linear(lstm_out.view(len(input_seq), -1))
+        return predictions[-1]
 
-input_size = 5 #number of features
-hidden_size = 2 #number of features in hidden state
-num_layers = 1 #number of stacked lstm layers
 
-num_classes = 1 #number of output classes 
+model = LSTM().to(device)
+loss_function = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.00001)
+# Learn rate will likely be in [0.0001, 0.01]
 
-lstm1 = LSTM1(num_classes, input_size, hidden_size, num_layers, X_train_tensors_final.shape[1]) #our lstm class 
+start = time.time()
 
-criterion = torch.nn.MSELoss()    # mean-squared error for regression
-optimizer = torch.optim.Adam(lstm1.parameters(), lr=learning_rate) 
+training_loss = []
 
-for epoch in range(num_epochs):
-  outputs = lstm1.forward(X_train_tensors_final) #forward pass
-  optimizer.zero_grad() #caluclate the gradient, manually setting to 0
- 
-  # obtain the loss function
-  loss = criterion(outputs, y_train_tensors)
- 
-  loss.backward() #calculates the loss of the loss function
- 
-  optimizer.step() #improve from loss, i.e backprop
-  if epoch % 100 == 0:
-    print("Epoch: %d, loss: %1.5f" % (epoch, loss.item())) 
+# 8
+print('8')
+epochs = 15000
+for i in range(epochs):
+    j = 0
+    for seq, labels in train_inout_seq:
+        optimizer.zero_grad()
+        model.hidden_cell = (torch.zeros(1, 1, model.hidden_layer_size).to(device),
+                             torch.zeros(1, 1, model.hidden_layer_size).to(device))
+        y_pred = model(seq)
 
-df_x_ss = ss.transform(df.iloc[:, :-1]) #old transformers
-df_y_mm = mm.transform(df.iloc[:, -1:]) #old transformers
+        single_loss = loss_function(y_pred, labels)
+        single_loss.backward()
+        optimizer.step()
+        training_loss.append(single_loss.item())
+        if j % 1000 == 0:
+            print(f'epoch: {i:3} seq: {j:3}')
+        j += 1
+        # print(f'epoch: {i:3} loss: {single_loss.item():10.8f}')
+    print(f'epoch: {i:3} loss: {single_loss.item():10.10f}')
 
-df_x_ss = Variable(torch.Tensor(df_x_ss)) #converting to Tensors
-df_y_mm = Variable(torch.Tensor(df_y_mm))
-#reshaping the dataset
-df_x_ss = torch.reshape(df_x_ss, (df_x_ss.shape[0], 1, df_x_ss.shape[1]))
+end = time.time()
+print('Time Elapsed')
+print(end-start)
 
-train_predict = lstm1(df_x_ss)#forward pass
-data_predict = train_predict.data.numpy() #numpy conversion
-dataY_plot = df_y_mm.data.numpy()
+# 9
+print('9')
+fut_pred = 100
 
-data_predict = mm.inverse_transform(data_predict) #reverse transformation
-dataY_plot = mm.inverse_transform(dataY_plot)
-plt.figure(figsize=(10,6)) #plotting
-plt.axvline(x=200, c='r', linestyle='--') #size of the training set
+test_inputs = train_data_normalized[-train_window:].tolist()
+print(test_inputs)
 
-plt.plot(dataY_plot, label='Actuall Data') #actual plot
-plt.plot(data_predict, label='Predicted Data') #predicted plot
-plt.title('Time-Series Prediction')
-plt.legend()
+model.eval()
+
+for i in range(fut_pred):
+    seq = torch.FloatTensor(test_inputs[-train_window:]).to(device)
+    with torch.no_grad():
+        model.hidden = (torch.zeros(1, 1, model.hidden_layer_size).to(device),
+                        torch.zeros(1, 1, model.hidden_layer_size).to(device))
+        test_inputs.append(model(seq).item())
+
+print(test_inputs[fut_pred:])
+
+actual_predictions = scaler.inverse_transform(
+    np.array(test_inputs[train_window:]).reshape(-1, 1))
+print(actual_predictions)
+
+
+figure, axis = plt.subplots(2, 1)
+
+axis[0].grid(True)
+axis[0].autoscale(axis='x', tight=True)
+axis[0].plot(df['Time'][-(fut_pred + 100):],
+             df['ask_price'][-(fut_pred + 100):])
+axis[0].plot(df['Time'][-fut_pred:], actual_predictions)
+axis[1].grid(True)
+axis[1].autoscale(axis='x', tight=True)
+axis[1].plot(df['Time'], df['ask_price'])
+axis[1].plot(df['Time'][-fut_pred:], actual_predictions)
 plt.show()
