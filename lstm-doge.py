@@ -1,4 +1,5 @@
 import time
+from sqlalchemy import true
 import torch
 import torch.nn as nn
 import seaborn as sns
@@ -12,11 +13,16 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # 1
 df = pd.read_csv("TestData/file.csv", names=['ask_price', 'bid_price',
                  'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
-df = df.iloc[::100]
+#df = df.iloc[::40]
+
+
 
 # 2
 print('2')
-all_data = df['ask_price'].values.astype(float)
+all_data = df[['ask_price', 'bid_price', 'mark_price']].values.astype(float)
+
+columnCount = len(all_data[0])
+batch_size = 1
 
 # 3
 print('3')
@@ -24,59 +30,79 @@ test_data_size = int(len(df.index) * 0.2)
 train_data = all_data[:-test_data_size]
 test_data = all_data[-test_data_size:]
 
-# 4
-print('4')
-scaler = MinMaxScaler(feature_range=(-1, 1))
-train_data_normalized = scaler.fit_transform(train_data .reshape(-1, 1))
-
-# 5
-print('5')
-train_data_normalized = torch.FloatTensor(
-    train_data_normalized).view(-1).to(device)
-
-# 6
-print('6')
-train_window = 5
-
+if columnCount > 1:
+    train_data = train_data.reshape(-1, columnCount)
+else:
+    train_data = train_data.reshape(-1)
+# Not scaling on normalizing since datapoints are of a similar nature
 
 def create_inout_sequences(input_data, tw):
-    inout_seq = []
+    input_seq = []
+    output_seq = []
     L = len(input_data)
     for i in range(L-tw):
         train_seq = input_data[i:i+tw]
         train_label = input_data[i+tw:i+tw+1]
-        inout_seq.append((train_seq, train_label))
-    return inout_seq
-
-
-train_inout_seq = create_inout_sequences(train_data_normalized, train_window)
-
-# 7
-print('7')
-
+        input_seq.append(train_seq)
+        output_seq.append(train_label)
+    return input_seq, output_seq
 
 class LSTM(nn.Module):
-    def __init__(self, input_size=1, hidden_layer_size=100, output_size=1):
+    def __init__(self, input_size=columnCount, hidden_layer_size=128, output_size=1):
         super().__init__()
         self.hidden_layer_size = hidden_layer_size
 
-        self.lstm = nn.LSTM(input_size, hidden_layer_size).to(device)
+        self.lstm = nn.LSTM(input_size, hidden_layer_size, num_layers = 1).to(device)
 
         self.linear = nn.Linear(hidden_layer_size, output_size)
 
-        self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size).to(device),
-                            torch.zeros(1, 1, self.hidden_layer_size).to(device))
+        self.hidden_cell = (torch.zeros(1, batch_size, self.hidden_layer_size).to(device),
+                            torch.zeros(1, batch_size, self.hidden_layer_size).to(device))
 
     def forward(self, input_seq):
-        lstm_out, self.hidden_cell = self.lstm(
-            input_seq.view(len(input_seq), 1, -1), self.hidden_cell)
-        predictions = self.linear(lstm_out.view(len(input_seq), -1))
-        return predictions[-1]
+        #print("input shape: ", input_seq.shape)
+        lstm_out, self.hidden_cell = self.lstm( input_seq.reshape(len(input_seq), -1, columnCount), self.hidden_cell )
+        #print("lstm_out shape: ", lstm_out.shape)
+        last_output_lstm = lstm_out[-1]
 
+        #print("last out", last_output_lstm.shape)
+        # print("post reshape right before linear shape: ", last_output_lstm.view(len(input_seq), -1).shape)
+        predictions = self.linear(last_output_lstm)
+        #print("preds shape: ", predictions.shape)
+
+        return predictions
+
+
+train_window = 100
+
+### 
+train_input, train_labels = create_inout_sequences(train_data, train_window)
+
+input = train_input[0] ## colCount x 50
+
+train_dataset = []
+for i in range(0, len(train_input), batch_size):
+    batched_input = train_input[i : i + batch_size]
+    torch_batched_input = torch.FloatTensor(batched_input).to(device)
+    ## TRANSPOSING HERE DREW
+    torch_batched_input = torch.transpose(torch_batched_input, 0, 1)
+
+    batched_output = train_labels[i : i + batch_size]
+    torch_batched_output = torch.FloatTensor(batched_output).to(device)
+
+    train_dataset.append((torch_batched_input, torch_batched_output))
+
+# a = torch.FloatTensor([input, input]).to(device).reshape(120, -1)
+
+
+
+# a = torch.cat((input, input)).reshape(120, -1)
+# model = LSTM().to(device)
+# pred = model(train_dataset[0][0])
 
 model = LSTM().to(device)
 loss_function = nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.00001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 # Learn rate will likely be in [0.0001, 0.01]
 
 start = time.time()
@@ -85,16 +111,16 @@ training_loss = []
 
 # 8
 print('8')
-epochs = 15000
+epochs = 100
 for i in range(epochs):
     j = 0
-    for seq, labels in train_inout_seq:
+    for input, y_real in train_dataset:
         optimizer.zero_grad()
-        model.hidden_cell = (torch.zeros(1, 1, model.hidden_layer_size).to(device),
-                             torch.zeros(1, 1, model.hidden_layer_size).to(device))
-        y_pred = model(seq)
+        model.hidden_cell = (torch.zeros(1, batch_size, model.hidden_layer_size).to(device),
+                        torch.zeros(1, batch_size, model.hidden_layer_size).to(device))
+        y_pred = model(input)
 
-        single_loss = loss_function(y_pred, labels)
+        single_loss = loss_function(y_pred, y_real)
         single_loss.backward()
         optimizer.step()
         training_loss.append(single_loss.item())
@@ -110,36 +136,42 @@ print(end-start)
 
 # 9
 print('9')
-fut_pred = 100
 
-test_inputs = train_data_normalized[-train_window:].tolist()
-print(test_inputs)
+#test_data = df[['ask_price', 'bid_price', 'mark_price']] for last 20%
+#test_data_size = len(test_data)
+
+test_inputs = test_data.tolist()
 
 model.eval()
 
-for i in range(fut_pred):
-    seq = torch.FloatTensor(test_inputs[-train_window:]).to(device)
+test_input, test_labels = create_inout_sequences(test_data, train_window)
+
+train_dataset = []
+for i in range(0, len(test_input) - batch_size, batch_size):
+    batched_test_input = test_input[i : i + batch_size]
+    torch_batched_test_input = torch.FloatTensor(batched_test_input).to(device)
+    ## TRANSPOSING HERE DREW
+    torch_batched_test_input = torch.transpose(torch_batched_test_input, 0, 1)
+    
     with torch.no_grad():
-        model.hidden = (torch.zeros(1, 1, model.hidden_layer_size).to(device),
-                        torch.zeros(1, 1, model.hidden_layer_size).to(device))
-        test_inputs.append(model(seq).item())
+        model.hidden_cell = (torch.zeros(1, batch_size, model.hidden_layer_size).to(device),
+                        torch.zeros(1, batch_size, model.hidden_layer_size).to(device))
+        train_dataset.append(model(torch_batched_test_input))
 
-print(test_inputs[fut_pred:])
-
-actual_predictions = scaler.inverse_transform(
-    np.array(test_inputs[train_window:]).reshape(-1, 1))
-print(actual_predictions)
-
+y_pred_data = []
+for i in train_dataset:
+    y_pred_data.append(i[0].item())
+    y_pred_data.append(i[1].item())
 
 figure, axis = plt.subplots(2, 1)
 
 axis[0].grid(True)
 axis[0].autoscale(axis='x', tight=True)
-axis[0].plot(df['Time'][-(fut_pred + 100):],
-             df['ask_price'][-(fut_pred + 100):])
-axis[0].plot(df['Time'][-fut_pred:], actual_predictions)
-axis[1].grid(True)
-axis[1].autoscale(axis='x', tight=True)
-axis[1].plot(df['Time'], df['ask_price'])
-axis[1].plot(df['Time'][-fut_pred:], actual_predictions)
+axis[0].plot(df['Time'],df['ask_price'])
+axis[0].plot(df['Time'][-(len(y_pred_data) + 1):-1], y_pred_data)
+
+# axis[1].grid(True)
+# axis[1].autoscale(axis='x', tight=True)
+# axis[1].plot(df['Time'], df['ask_price'])
+# axis[1].plot(df['Time'][-test_data_size:], actual_predictions)
 plt.show()
