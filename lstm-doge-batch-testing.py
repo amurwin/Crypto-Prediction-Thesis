@@ -7,25 +7,28 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+import plotly.graph_objects as go
+from datetime import datetime
+import helper
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# 1
-df = pd.read_csv("TestData/3day.csv", names=['ask_price', 'bid_price',
+df = pd.read_csv("TestData/DOGE_JAN2022.csv", names=['ask_price', 'bid_price',
                  'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
-df = df.iloc[::5]
+ndf = helper.getData(df, datetime(2022, 1, 1), 72, 10)
+ndf = ndf.reset_index()
 
 
 # 2
 print('2')
-all_data = df[['ask_price', 'bid_price', 'mark_price']].values.astype(float)
+all_data = ndf[['ask_price']].values.astype(float)
 
 columnCount = len(all_data[0])
 batch_size = 100
 
 # 3
 print('3')
-test_data_size = int(len(df.index) * 0.2)
+test_data_size = int(len(ndf.index) * 0.2)
 train_data = all_data[:-test_data_size]
 test_data = all_data[-test_data_size:]
 
@@ -120,7 +123,7 @@ for i in range(epochs):
             print(f'epoch: {i:3} seq: {j:3}')
         j += 1
         # print(f'epoch: {i:3} loss: {single_loss.item():10.8f}')
-    print(f'epoch: {i:3} loss: {single_loss.item():10.10f}')
+    print(f'epoch: {i:3} loss: {training_loss[-1]:10.10f}')
 
 end = time.time()
 print('Time Elapsed')
@@ -137,7 +140,7 @@ test_input, test_labels = create_inout_sequences(test_data, train_window)
 
 test_dataset = []
 with torch.no_grad():
-    for i in range(0, len(test_input)):
+    for i in range(0, len(test_dataset)):
         torch_test_input = torch.FloatTensor(test_input[i]).to(device)
         ## TRANSPOSING HERE DREW
         #
@@ -148,50 +151,8 @@ with torch.no_grad():
                         #torch.zeros(1, batch_size, model.hidden_layer_size).to(device))
         test_dataset.append(model(torch_test_input).cpu().numpy()[0][0])
 
-figure, axis = plt.subplots(2, 1)
 
-axis[0].grid(True)
-axis[0].autoscale(axis='x', tight=True)
-axis[0].plot(df['Time'],df['ask_price'])
-axis[0].plot(df['Time'][-(len(test_dataset) + 1):-1], test_dataset)
-
-# axis[1].grid(True)
-# axis[1].autoscale(axis='x', tight=True)
-# axis[1].plot(df['Time'], df['ask_price'])
-# axis[1].plot(df['Time'][-test_data_size:], actual_predictions)
-plt.show()
-
-df2 = pd.read_csv("TestData/4day.csv", names=['ask_price', 'bid_price',
-                 'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
-df2 = df2.iloc[::5]
-
-test_data2 = df2[['ask_price', 'bid_price', 'mark_price']].values.astype(float)
-model.eval()
-
-test_input2, test_labels = create_inout_sequences(test_data2, train_window)
-
-test_dataset2 = []
-with torch.no_grad():
-    for i in range(0, len(test_input2)):
-        torch_test_input2 = torch.FloatTensor(test_input2[i]).to(device)
-        ## TRANSPOSING HERE DREW
-        #
-        torch_test_input2 = torch_test_input2.reshape(1, train_window, columnCount)
-        print(i)
-        torch_test_input2 = torch.transpose(torch_test_input2, 0, 1)
-        #model.hidden_cell = (torch.zeros(1, batch_size, model.hidden_layer_size).to(device),
-                        #torch.zeros(1, batch_size, model.hidden_layer_size).to(device))
-        test_dataset2.append(model(torch_test_input2).cpu().numpy()[0][0])
-
-figure, axis = plt.subplots(2, 1)
-
-axis[1].grid(True)
-axis[1].autoscale(axis='x', tight=True)
-axis[1].plot(df2['Time'],df2['ask_price'])
-axis[1].plot(df2['Time'][-(len(test_dataset2)):], test_dataset2)
-
-# axis[1].grid(True)
-# axis[1].autoscale(axis='x', tight=True)
-# axis[1].plot(df['Time'], df['ask_price'])
-# axis[1].plot(df['Time'][-test_data_size:], actual_predictions)
-plt.show()
+fig1 = go.Figure()
+fig1.add_trace(go.Scatter(x=ndf["Time"], y=ndf["ask_price"], line_shape='linear'))
+fig1.add_trace(go.Scatter(x=ndf['Time'][-(len(test_dataset) + 1):-1], y=test_dataset, line_shape='linear'))
+fig1.show()
