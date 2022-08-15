@@ -10,11 +10,11 @@ from sklearn.preprocessing import MinMaxScaler
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # 1
-df = pd.read_csv("TestData/file.csv", names=['ask_price', 'bid_price',
-                 'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
-df = df.iloc[::500]
+# df = pd.read_csv("TestData/file.csv", names=['ask_price', 'bid_price',
+#                  'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
+# df = df.iloc[::500]
 
-
+df = pd.read_pickle("10s.pkl")
 
 # 2
 print('2')
@@ -29,7 +29,7 @@ test_data = all_data[-test_data_size:]
 # 4
 print('4')
 scaler = MinMaxScaler(feature_range=(-1, 1))
-train_data_normalized = scaler.fit_transform(train_data .reshape(-1, 1))
+train_data_normalized = scaler.fit_transform(train_data.reshape(-1, 1))
 
 # 5
 print('5')
@@ -45,34 +45,32 @@ def create_inout_sequences(input_data, tw):
         inout_seq.append((train_seq, train_label))
     return inout_seq
 
+class LSTM(nn.Module):
+    def __init__(self, input_size=1, hidden_layer_size=100, output_size=1):
+        super().__init__()
+        self.hidden_layer_size = hidden_layer_size
+
+        self.lstm = nn.LSTM(input_size, hidden_layer_size).to(device)
+
+        self.linear = nn.Linear(hidden_layer_size, output_size)
+
+        self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size).to(device),
+                            torch.zeros(1, 1, self.hidden_layer_size).to(device))
+
+    def forward(self, input_seq):
+        lstm_out, self.hidden_cell = self.lstm(
+            input_seq.view(len(input_seq), 1, -1), self.hidden_cell)
+        predictions = self.linear(lstm_out.view(len(input_seq), -1))
+        return predictions[-1]
+
 # 6
 print('6')
-for train_window in [110, 120]:
+for train_window in [50]:
 
     train_inout_seq = create_inout_sequences(train_data_normalized, train_window)
 
     # 7
     print('7')
-
-
-    class LSTM(nn.Module):
-        def __init__(self, input_size=1, hidden_layer_size=100, output_size=1):
-            super().__init__()
-            self.hidden_layer_size = hidden_layer_size
-
-            self.lstm = nn.LSTM(input_size, hidden_layer_size).to(device)
-
-            self.linear = nn.Linear(hidden_layer_size, output_size)
-
-            self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size).to(device),
-                                torch.zeros(1, 1, self.hidden_layer_size).to(device))
-
-        def forward(self, input_seq):
-            lstm_out, self.hidden_cell = self.lstm(
-                input_seq.view(len(input_seq), 1, -1), self.hidden_cell)
-            predictions = self.linear(lstm_out.view(len(input_seq), -1))
-            return predictions[-1]
-
     model = LSTM().to(device)
     loss_function = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
@@ -84,7 +82,7 @@ for train_window in [110, 120]:
 
     # 8
     print('8')
-    epochs = 1500
+    epochs = 100
     for i in range(epochs):
         j = 0
         for seq, labels in train_inout_seq:

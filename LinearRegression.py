@@ -66,7 +66,7 @@ def fit(num_epochs, model, loss_fn, opt, train_dl):
         if (epoch+1) % 10 == 0:
             print('Epoch [{}/{}], Loss: {:.4f}'.format(epoch+1, num_epochs, loss.item()))
 #fit model for 100 epochs
-fit(1000, model, loss_fn , opt ,train_dl)
+fit(100, model, loss_fn , opt ,train_dl)
 # Generate predictions
 preds = model(x)
 preds = preds.reshape(-1).tolist()

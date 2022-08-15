@@ -1,4 +1,6 @@
 from datetime import datetime
+
+from sqlalchemy import false
 import helper
 import pandas as pd
 import torch
@@ -7,6 +9,8 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 import plotly.graph_objects as go
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 train_window = 50
 
@@ -35,7 +39,7 @@ while validDF: # A full 72 hours was retrieved
         train_dl = DataLoader(train_ds)
 
         # Define linear model
-        model = nn.Linear(50, 1)
+        model = nn.Linear(train_window, 1)
 
         # Parameters
         loss_fn = F.mse_loss
@@ -47,9 +51,23 @@ while validDF: # A full 72 hours was retrieved
         # Generate predictions
         preds = model(x)
         preds = preds.reshape(-1).tolist()
+        newPreds = []
+        predSet = x[-1][1:].tolist()
+        predSet.append(model(x[-1]).item())
+        predSet = torch.FloatTensor(predSet)
+        
+        for _ in range(0, 1000):
+            predSet = predSet[1:].tolist() #List
+
+
+
+
+        
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df["Time"], y=df["ask_price"], line_shape='linear'))
         fig.add_trace(go.Scatter(x=[datetime.strptime(df['Time'][i], "%Y-%m-%d %H:%M:%S.%f") for i in range(len(df)-len(preds), len(df))], y=preds, line_shape='linear'))
         fig.show()
         validDF = False
+
+        torch.save(model.state_dict(), "10000test" + str(interval) + ".lr")

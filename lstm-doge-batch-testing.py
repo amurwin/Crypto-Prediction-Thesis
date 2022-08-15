@@ -15,7 +15,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 df = pd.read_csv("TestData/DOGE_JAN2022.csv", names=['ask_price', 'bid_price',
                  'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
-ndf = helper.getData(df, datetime(2022, 1, 1), 72, 10)
+ndf = helper.getData(df, datetime(2022, 1, 1), 72, 30)
 ndf = ndf.reset_index()
 
 
@@ -24,7 +24,7 @@ print('2')
 all_data = ndf[['ask_price']].values.astype(float)
 
 columnCount = len(all_data[0])
-batch_size = 100
+batch_size = 10
 
 # 3
 print('3')
@@ -74,7 +74,7 @@ class LSTM(nn.Module):
         return predictions
 
 
-train_window = 256
+train_window = 64
 
 ### 
 train_input, train_labels = create_inout_sequences(train_data, train_window)
@@ -106,13 +106,13 @@ training_loss = []
 
 # 8
 print('8')
-epochs = 1000
+epochs = 10000
 for i in range(epochs):
     j = 0
     for input, y_real in train_dataset:
         optimizer.zero_grad()
 
-        #print(input.size())
+        #print(input.size()) 
         y_pred = model(input)
 
         single_loss = loss_function(y_pred, y_real)
@@ -140,7 +140,7 @@ test_input, test_labels = create_inout_sequences(test_data, train_window)
 
 test_dataset = []
 with torch.no_grad():
-    for i in range(0, len(test_dataset)):
+    for i in range(0, len(test_input)):
         torch_test_input = torch.FloatTensor(test_input[i]).to(device)
         ## TRANSPOSING HERE DREW
         #

@@ -19,7 +19,7 @@ ndf = ndf.reset_index()
 
 train_window = 50
 
-all_data = ndf[['ask_price']].values.astype(float)
+all_data = ndf[['ask_price', 'bid_price', 'mark_price']].values.astype(float)
 x, y = helper.create_linear_sequences(all_data, train_window)
 
 x = torch.FloatTensor(x)
