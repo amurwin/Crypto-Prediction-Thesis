@@ -77,5 +77,4 @@ fig2.add_trace(go.Scatter(x=monthFilters[0][startWindow:thisTime]["Time"], y=mon
 fig2.show()
 
 startWindow += 360
-
 torch.save(model.state_dict(), "10000test" + str(11) + ".lr")

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from dataGen import *
+from datetime import datetime, timedelta
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -14,7 +16,18 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #                  'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
 # df = df.iloc[::500]
 
-df = pd.read_pickle("10s.pkl")
+monthDF = pd.read_csv("TestData/DOGE_JAN2022.csv", names=['ask_price', 'bid_price',
+                 'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
+monthFilters = [pd.read_pickle("10s.pkl"), pd.read_pickle("60s.pkl"), pd.read_pickle("3600s.pkl")]
+monthFilters = [x.reset_index(drop=True) for x in monthFilters]
+frameGen = dataGenerator(monthDF, datetime(2022, 1, 1))
+
+allDFs = next(frameGen)
+allDFs = allDFs.reset_index(drop=True)
+filteredDFs = dataFilter(allDFs, [timedelta(seconds=10), timedelta(seconds=60), timedelta(seconds=3600)])
+df = filteredDFs[1]
+df = df.reset_index(drop=True)
+
 
 # 2
 print('2')
@@ -82,7 +95,7 @@ for train_window in [50]:
 
     # 8
     print('8')
-    epochs = 100
+    epochs = 1000
     for i in range(epochs):
         j = 0
         for seq, labels in train_inout_seq:

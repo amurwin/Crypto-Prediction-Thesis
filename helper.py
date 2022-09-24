@@ -78,7 +78,6 @@ def fit(num_epochs, model, loss_fn, opt, train_dl):
             opt.step()
             
             # 5. Reset the gradients to zero
-
         
             # Print the progress
         if (epoch+1) % 10 == 0:
