@@ -58,6 +58,7 @@ def ls2(all_data, train_window):
 
 # Utility function to train the model
 def fit(num_epochs, model, loss_fn, opt, train_dl):
+    losses = []
     loss = 0
     # Repeat for given number of epochs
     for epoch in range(num_epochs):
@@ -70,7 +71,7 @@ def fit(num_epochs, model, loss_fn, opt, train_dl):
             
             # 2. Calculate loss
             loss = loss_fn(pred, yb)
-            
+
             # 3. Compute gradients
             loss.backward()
             
@@ -79,6 +80,12 @@ def fit(num_epochs, model, loss_fn, opt, train_dl):
             
             # 5. Reset the gradients to zero
         
-            # Print the progress
+            #Update loss list for each epoch
+            losses.append(loss)
+
+        # Print the progress
         if (epoch+1) % 10 == 0:
             print('Epoch [{}/{}], Loss: {:.4f}'.format(epoch+1, num_epochs, loss.item()))
+
+
+    return losses

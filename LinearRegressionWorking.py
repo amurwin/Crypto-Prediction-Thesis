@@ -9,24 +9,25 @@ from torch.utils.data import DataLoader
 import plotly.graph_objects as go
 from dataGen import *
 
+prerun_model = '5000-0001-R2-F1.linear' # Optional
 train_window = 50
 start_day = 1
 start_hour = 0
 timeframe = 60  # Number of seconds 
-day_duration = 86400 / timeframe
-hour_duration = day_duration / 24
-prerun_model = '5000-0001-R2-F1.linear' # Optional
 
-if not hour_duration.is_integer():
-    raise Exception("INVALID TIMEFRAME")
+
+# day_duration = 86400 / timeframe
+# hour_duration = day_duration / 24
+# if not hour_duration.is_integer():
+#     raise Exception("INVALID TIMEFRAME")
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 monthDF = pd.read_csv("TestData/DOGE_JAN2022.csv", names=['ask_price', 'bid_price',
                  'mark_price', 'high_price', 'low_price', 'open_price', 'volume', 'Time'])
 monthFilters = [pd.read_pickle("10s.pkl"), pd.read_pickle("60s.pkl"), pd.read_pickle("3600s.pkl")]
 monthFilters = [x.reset_index(drop=True) for x in monthFilters]
-train_df = monthFilters[1].iloc[int(day_duration*(start_day-1)+hour_duration*start_hour):int(day_duration*(start_day+2)+hour_duration*start_hour)].copy(deep=True).reset_index(drop=True)
-test_df = monthFilters[1].iloc[int(day_duration*(start_day+2)+hour_duration*start_hour):int(day_duration*(start_day+3)+hour_duration*start_hour)].copy(deep=True).reset_index(drop=True)
+train_df = monthFilters[0].iloc[int(8640*(start_day-1)+360*start_hour):int(8640*(start_day+2)+360*start_hour):int(timeframe/10)].copy(deep=True).reset_index(drop=True)
+test_df = monthFilters[0].iloc[int(8640*(start_day+2)+360*start_hour):int(8640*(start_day+3)+360*start_hour):int(timeframe/10)].copy(deep=True).reset_index(drop=True)
 
 train_df_ask_price = train_df[['ask_price']].values.astype(float)
 test_df_ask_price = test_df[['ask_price']].values.astype(float)
@@ -45,13 +46,17 @@ train_dataloader = DataLoader(train_dataset, shuffle=True)
 
 model = nn.Linear(train_window, 1)
 
-
+losses = []
 if True: # If false, load a pre-run model
     loss_fn = F.mse_loss
     opt = torch.optim.SGD(model.parameters(), lr=0.0005)
     loss = 0
-    helper.fit(10000, model, loss_fn , opt ,train_dataloader)
-    torch.save(model.state_dict(), '10000-0005-T1.linear')
+    losses = helper.fit(10000, model, loss_fn , opt ,train_dataloader)
+    #torch.save(model.state_dict(), '300s-10000-01-T3-F1.linear')
+
+    predGraph = go.Figure()
+    predGraph.add_trace(go.Scatter(x=list(range(1,len(losses)+1)), y=[x.tolist() for x in losses], line_shape="linear", name="Training data"))
+    predGraph.show()
 else:
     model.load_state_dict(torch.load(prerun_model))
 
